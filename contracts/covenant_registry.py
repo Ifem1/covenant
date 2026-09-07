@@ -18,7 +18,6 @@ class CovenantRegistry(gl.Contract):
     @gl.public.write
     def activate(self,covenant_id):
         c=self.covenants[covenant_id]; assert c['operator']==gl.message.sender and c['status']=='FUNDED'; c['status']='ACTIVE'
-    @gl.public.write
     def record_audit(self,covenant_id, findings, interval_start, interval_end):
         c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id) and len(findings)==len(c['clauses'])
         assert interval_end > interval_start and interval_end <= gl.get_block_timestamp()

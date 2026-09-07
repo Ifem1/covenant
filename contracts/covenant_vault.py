@@ -4,7 +4,7 @@ from genlayer import *
 
 class CovenantVault(gl.Contract):
     def __init__(self, registry): self.registry=registry; self.bonds=TreeMap(); self.slashed=TreeMap()
-    @gl.public.write
+    @gl.public.write.payable
     def deposit_bond(self,covenant_id):
         c=self.registry.get_covenant(covenant_id); assert c['operator']==gl.message.sender and c['status']=='DRAFT'; assert gl.message.value>=c['minimum_bond']; self.bonds[covenant_id]=self.bonds.get(covenant_id,u256(0))+gl.message.value; c['status']='FUNDED'
     @gl.public.view

@@ -3,4 +3,5 @@
 
 label{display:block;margin:22px 0;color:#aeb8ba}input,textarea{display:block;width:100%;margin-top:8px;background:#151a1d;border:1px solid #536067;color:#ecedea;padding:13px}textarea{min-height:100px;resize:vertical}input:focus,textarea:focus,button:focus,a:focus{outline:2px solid var(--amber);outline-offset:3px}
 .top{padding-right:300px}@media(max-width:760px){.top{padding-right:0}}
+.wallet-wrap{position:absolute!important}
 .wallet-wrap{position:fixed;top:18px;right:24px;z-index:20;display:flex;align-items:center;gap:8px}.top .nav{padding-right:300px}.wallet{background:var(--amber);border:0;color:var(--ink);font:700 11px 'Roboto Mono';padding:10px 12px}.wallet-network{color:#9eabad;font:10px 'Roboto Mono'}.wallet-error{position:absolute;top:40px;right:0;width:220px;color:var(--red);font-size:12px}.page{zoom:.8}@media(max-width:760px){.wallet-wrap{top:12px;right:14px}.top .nav{padding-right:0}.wallet-network{display:none}.page{zoom:.8}}

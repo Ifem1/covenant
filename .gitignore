@@ -3,3 +3,6 @@ node_modules
 .env
 .env.local
 coverage
+__pycache__
+*.pyc
+*.tsbuildinfo

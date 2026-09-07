@@ -1,0 +1,2 @@
+import {describe,it,expect} from 'vitest'; import {Source,Finding} from '../lib/validation';
+describe('evidence safety',()=>{it('rejects private sources',()=>expect(()=>Source.parse('http://localhost:3000/a')).toThrow());it('allows abstention',()=>expect(Finding.parse({clauseId:1,finding:'INCONCLUSIVE',severity:'LOW',evidence:[],observedEventDate:'UNKNOWN',reason:'coverage unavailable'}).finding).toBe('INCONCLUSIVE'))});

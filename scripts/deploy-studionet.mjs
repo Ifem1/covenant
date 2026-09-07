@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import {createClient, createAccount} from 'genlayer-js';
+import {studionet} from 'genlayer-js/chains';
+const key=process.env.COVENANT_DEPLOYER_PRIVATE_KEY;
+if(!key) throw new Error('Set COVENANT_DEPLOYER_PRIVATE_KEY for this one-time deployment; never commit it.');
+if(studionet.id!==61999) throw new Error(`Refusing non-Studionet chain ${studionet.id}`);
+const account=createAccount(key); const client=createClient({chain:studionet,account});
+const deploy=async(file,args=[])=>{const code=fs.readFileSync(file,'utf8');const hash=await client.deployContract({code,args,account});const receipt=await client.waitForTransactionReceipt({hash});const address=receipt.contractAddress??receipt.txDataDecoded?.contractAddress??receipt.data?.contract_address??receipt.data?.contractAddress;if(!address)throw new Error(`Deployment produced no address. Receipt: ${JSON.stringify(receipt)}`);return {hash,address,sha256:crypto.createHash('sha256').update(code).digest('hex'),bytes:Buffer.byteLength(code)}};
+const registry=await deploy('contracts/covenant_registry.py');
+const vault=await deploy('contracts/covenant_vault.py',[registry.address]);
+console.log(JSON.stringify({chainId:studionet.id,registry,vault},null,2));

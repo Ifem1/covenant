@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import pytest
 
 ROOT=Path(__file__).parents[1]
 REGISTRY=str(ROOT/"contracts"/"covenant_registry.py")

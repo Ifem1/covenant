@@ -89,9 +89,11 @@ class CovenantRegistry(gl.Contract):
         for clause in clauses: assert clause.clause_id>0 and clause.clause_id not in ids and clause.minimum_sources>=1 and clause.minimum_sources<=len(sources); ids.append(clause.clause_id); total+=clause.slash_bps
         for source in sources: assert source.source_id>0 and source.source_id not in source_ids and source.url.startswith('https://') and source.url not in urls; source_ids.append(source.source_id); urls.append(source.url)
         assert total<=10000
-        canonical='operator='+str(gl.message.sender_address)+'|service='+service+'|description='+description+'|recovery='+str(recovery)+'|minimum_bond='+str(minimum_bond)+'|interval='+str(interval)+'|term='+str(term)
-        for clause in clauses: canonical+='|clause_id='+str(clause.clause_id)+'|text='+clause.text+'|slash_bps='+str(clause.slash_bps)+'|minimum_sources='+str(clause.minimum_sources)
-        for source in sources: canonical+='|source_id='+str(source.source_id)+'|url='+source.url
+        canonical=''
+        def field(key,value): return str(len(key))+':'+key+str(len(str(value)))+':'+str(value)
+        canonical+=field('operator',gl.message.sender_address)+field('service',service)+field('description',description)+field('recovery',recovery)+field('minimum_bond',minimum_bond)+field('interval',interval)+field('term',term)
+        for clause in clauses: canonical+=field('clause_id',clause.clause_id)+field('text',clause.text)+field('slash_bps',clause.slash_bps)+field('minimum_sources',clause.minimum_sources)
+        for source in sources: canonical+=field('source_id',source.source_id)+field('url',source.url)
         cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',clauses,sources,sha256(canonical.encode()).hex(),0,10000,'',term); return cid
     @gl.public.write
     def bind_canonical_vault(self,vault: Address): assert gl.message.sender_address==self.admin and self.canonical_vault==Address('0x0000000000000000000000000000000000000000') and vault!=Address('0x0000000000000000000000000000000000000000'); self.canonical_vault=vault
@@ -122,7 +124,7 @@ class CovenantRegistry(gl.Contract):
                 if a.get('finding') in ['COMPLIED','BREACHED'] and (not a.get('evidence_source_ids') or not a.get('excerpt')): return False
             return True
         raw=gl.vm.run_nondet_unsafe(observe,validate); assert isinstance(raw,list) and len(raw)==len(clauses)
-        findings=DynArray[Finding](); seen=DynArray[u32](); outcome='COMPLIED'; slash=u32(0)
+        findings=DynArray[Finding](); seen=DynArray[u32](); outcome='CLEAN'; slash=u32(0)
         for item in raw:
             assert isinstance(item,dict)
             clause_id=item.get('clause_id'); finding=item.get('finding'); severity=item.get('severity'); ids=item.get('evidence_source_ids'); excerpt=item.get('excerpt'); event_date=item.get('observed_event_date'); reason=item.get('reason'); coverage=item.get('coverage')

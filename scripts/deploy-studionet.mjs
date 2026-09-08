@@ -7,6 +7,12 @@ if(!key) throw new Error('Set COVENANT_DEPLOYER_PRIVATE_KEY for this one-time de
 if(studionet.id!==61999) throw new Error(`Refusing non-Studionet chain ${studionet.id}`);
 const account=createAccount(key); const client=createClient({chain:studionet,account});
 const deploy=async(file,args=[])=>{const code=fs.readFileSync(file,'utf8');const hash=await client.deployContract({code,args,account});const receipt=await client.waitForTransactionReceipt({hash});const address=receipt.contractAddress??receipt.txDataDecoded?.contractAddress??receipt.data?.contract_address??receipt.data?.contractAddress;if(!address)throw new Error(`Deployment produced no address. Receipt: ${JSON.stringify(receipt)}`);return {hash,address,sha256:crypto.createHash('sha256').update(code).digest('hex'),bytes:Buffer.byteLength(code)}};
-const registry=await deploy('contracts/covenant_registry.py');
+const admin=account.address;
+const registry=await deploy('contracts/covenant_registry.py',[admin]);
 const vault=await deploy('contracts/covenant_vault.py',[registry.address]);
-console.log(JSON.stringify({chainId:studionet.id,registry,vault},null,2));
+const bindHash=await client.writeContract({address:registry.address,functionName:'bind_canonical_vault',args:[vault.address],account,value:0n});
+const bindReceipt=await client.waitForTransactionReceipt({hash:bindHash});
+if(bindReceipt.executionResult && !['SUCCESS','SUCCESSFUL','0'].includes(String(bindReceipt.executionResult))) throw new Error(`Vault binding failed: ${JSON.stringify(bindReceipt)}`);
+const bound=await client.readContract({address:registry.address,functionName:'get_canonical_vault',args:[]});
+if(String(bound).toLowerCase()!==vault.address.toLowerCase()) throw new Error(`Canonical Vault verification failed: expected ${vault.address}, got ${bound}`);
+console.log(JSON.stringify({chainId:studionet.id,admin,registry,vault,bindHash,bound},null,2));

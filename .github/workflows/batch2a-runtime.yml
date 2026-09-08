@@ -38,6 +38,16 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Prepare pinned GenVM runner cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/gltest-direct"
+          curl --fail --location \
+            https://github.com/genlayerlabs/genvm/releases/download/v0.3.0-rc7/genvm-runners-all.tar.xz \
+            --output "$HOME/.cache/gltest-direct/genvm-universal-v0.3.0-rc7.tar.xz"
+          echo "e218a1854214681560351051f76fe2b878545cf3409455ef372d57014a88ca67  $HOME/.cache/gltest-direct/genvm-universal-v0.3.0-rc7.tar.xz" | sha256sum -c -
+
       - name: GenVM Registry lint
         run: genvm-lint check contracts/covenant_registry.py
 

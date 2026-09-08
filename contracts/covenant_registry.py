@@ -116,10 +116,12 @@ class CovenantRegistry(gl.Contract):
     @gl.public.write
     def bind_canonical_vault(self,vault: Address): assert gl.message.sender_address==self.admin and self.canonical_vault==Address('0x0000000000000000000000000000000000000000') and vault!=Address('0x0000000000000000000000000000000000000000'); self.canonical_vault=vault
     @gl.public.write
-    def mark_funded(self,covenant_id: u256): c=self.covenants[covenant_id]; assert self.canonical_vault==gl.message.sender_address and c.status=='DRAFT'; c.status='FUNDED'
+    def mark_funded(self,covenant_id: u256): c=self.covenants[covenant_id]; assert self.canonical_vault==gl.message.sender_address; assert c.status in ['DRAFT','FUNDED']; c.status='FUNDED'
     @gl.public.write
     def mark_audit_settled(self,audit_id: str):
-        a=self.audits[audit_id]; assert self.canonical_vault==gl.message.sender_address; assert a.outcome=='BREACH' and not a.settled; c=self.covenants[a.covenant_id]; assert c.unsettled_breach_count>0; a.settled=True; c.unsettled_breach_count-=1
+        a=self.audits[audit_id]; assert self.canonical_vault==gl.message.sender_address; assert a.outcome=='BREACH';
+        if not a.settled:
+            c=self.covenants[a.covenant_id]; assert c.unsettled_breach_count>0; a.settled=True; c.unsettled_breach_count-=1
     @gl.public.write
     def activate(self,covenant_id: u256): c=self.covenants[covenant_id]; assert c.operator==gl.message.sender_address and c.status=='FUNDED'; now=self._now_timestamp(); c.activation_timestamp=now; c.expiry_timestamp=now+c.term; c.current_interval_start=now; c.next_audit=min(now+c.interval,c.expiry_timestamp); c.status='ACTIVE'
     @gl.public.write
@@ -130,7 +132,7 @@ class CovenantRegistry(gl.Contract):
         return c.status=='EXPIRED'
     @gl.public.write
     def mark_closed(self,covenant_id: u256):
-        c=self.covenants[covenant_id]; assert self.canonical_vault==gl.message.sender_address and c.status=='EXPIRED'; c.status='CLOSED'
+        c=self.covenants[covenant_id]; assert self.canonical_vault==gl.message.sender_address and c.status in ['EXPIRED','CLOSED']; c.status='CLOSED'
     def _apply_audit_lifecycle(self,covenant_id: u256,outcome: str,slash_bps: u32,scheduled_end: u64):
         c=self.covenants[covenant_id]
         if outcome in ['INCONCLUSIVE','UNAVAILABLE']:
@@ -215,7 +217,7 @@ class CovenantRegistry(gl.Contract):
             elif finding=='UNAVAILABLE': has_unavailable=True
         for frozen in clauses: assert frozen.clause_id in seen
         if outcome!='BREACH': outcome='INCONCLUSIVE' if has_inconclusive else ('UNAVAILABLE' if has_unavailable else 'CLEAN')
-        assert slash<=snapshot.remaining_slash_bps
+        slash=min(slash,snapshot.remaining_slash_bps)
         audit_id=self._allocate_audit_id(covenant_id,start,end)
         self.audits[audit_id]=Audit(covenant_id,start,end,outcome,findings,slash,snapshot.definition_hash,False)
         c=self.covenants[covenant_id]

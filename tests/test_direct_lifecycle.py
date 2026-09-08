@@ -15,6 +15,7 @@ def setup(vm, deploy, alice, bob):
     setup_sdk_paths(Path(REGISTRY))
     from genlayer.py.types import Address
     registry = deploy(REGISTRY, Address(bytes(alice)))
+    vm.sender = alice
     module = __import__(type(registry).__module__, fromlist=["Clause", "Source"])
     recovery = Address(bytes(bob))
     clauses = [module.Clause(clause_id=1, text="availability", slash_bps=100, minimum_sources=1)]
@@ -58,9 +59,10 @@ def test_nonfinal_breach_continuation(direct_vm, direct_deploy, direct_alice, di
 def test_settlement_gated_expiry(direct_vm, direct_deploy, direct_alice, direct_bob):
     registry, cid, vault = setup(direct_vm, direct_deploy, direct_alice, direct_bob); a=registry.get_covenant(cid).activation_timestamp
     registry._apply_audit_lifecycle(cid,"BREACH",100,a+10); registry._apply_audit_lifecycle(cid,"CLEAN",0,a+20); registry._apply_audit_lifecycle(cid,"CLEAN",0,a+25)
-    assert registry.refresh_expiry(cid) is False
+    vm.warp(iso_from_unix(a+25)); assert registry.refresh_expiry(cid) is False
     module=__import__(type(registry).__module__,fromlist=["Audit"]); aid="fixture"
     registry.audits[aid]=module.Audit(cid,a+10,a+20,"BREACH",[],100,"hash",False)
+    direct_vm.warp(iso_from_unix(a+25)); assert registry.refresh_expiry(cid) is False
     direct_vm.sender=vault; registry.mark_audit_settled(aid); assert registry.get_covenant(cid).unsettled_breach_count==0; assert registry.refresh_expiry(cid) is True
     with pytest.raises(AssertionError): registry.mark_audit_settled(aid)
 

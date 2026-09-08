@@ -50,7 +50,7 @@ def test_registry_foundation_and_storage(direct_vm, direct_deploy, direct_alice,
     recovery = bob
     args, clause, sources = definition(registry, recovery)
     cases = [
-        args[:2] + [recovery, 0, 10, 20, clauses, sources],
+        args[:2] + [recovery, 0, 10, 20, args[6], sources],
         args[:2] + [alice, 100, 10, 20, args[6], sources],
         args[:7] + [sources[:1] + [type(sources[1])(source_id=2, url=sources[0].url)]],
         args[:7] + [sources[:1] + [type(sources[1])(source_id=2, url="http://example.com/b")]],

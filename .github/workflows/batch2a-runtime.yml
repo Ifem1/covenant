@@ -65,6 +65,9 @@ jobs:
       - name: Direct Mode public audit suite
         if: always()
         run: gltest tests/test_direct_audit.py --contracts-dir contracts
+      - name: Direct Mode financial suite
+        if: always()
+        run: gltest tests/test_direct_financial.py --contracts-dir contracts --leader-only
 
   glsim-contract-runtime:
     runs-on: ubuntu-latest

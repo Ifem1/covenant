@@ -24,6 +24,8 @@ class CovenantVault(gl.Contract):
     pending_slash_count: TreeMap[u256,u32]
     close_state: TreeMap[u256,u32]
     def __init__(self, registry: Address): self.registry = registry
+    def _target_slashed(self, covenant_id: u256, consumed_bps: u32) -> u256:
+        return self.principal.get(covenant_id,u256(0))*consumed_bps//10000
     @gl.public.view
     def get_bond(self,covenant_id: u256) -> u256: return self.bonds.get(covenant_id,u256(0))
     @gl.public.write.payable

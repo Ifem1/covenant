@@ -1,0 +1,46 @@
+name: Engineering verification
+
+on:
+  push:
+    branches: [codex/contract-foundation-hardening]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install JavaScript dependencies
+        run: npm ci
+      - name: Install contract tooling
+        run: python -m pip install --upgrade pip 'genlayer-test==0.29.2' genvm-linter cloudpickle
+      - name: Compile Python sources
+        run: python -m compileall -q contracts tests
+      - name: JavaScript verification
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+          npm run build
+      - name: Registry lint and schema
+        run: |
+          genvm-lint check contracts/covenant_registry.py
+          genvm-lint schema contracts/covenant_registry.py
+      - name: Vault lint and schema
+        run: |
+          genvm-lint check contracts/covenant_vault.py
+          genvm-lint schema contracts/covenant_vault.py

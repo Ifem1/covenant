@@ -50,3 +50,15 @@ def test_public_run_audit_inconclusive(direct_vm,direct_deploy,direct_alice,dire
 
 def test_public_run_audit_unavailable(direct_vm,direct_deploy,direct_alice,direct_bob):
     _run_unresolved(direct_vm,direct_deploy,direct_alice,direct_bob,"UNAVAILABLE")
+
+def test_public_run_audit_rejects_fabricated_and_out_of_window_evidence(direct_vm,direct_deploy,direct_alice,direct_bob):
+    from gltest.direct.sdk_loader import setup_sdk_paths
+    setup_sdk_paths(Path(REGISTRY)); from genlayer.py.types import Address
+    direct_vm.check_pickling=True; direct_vm.warp("2026-01-01T00:00:00+00:00"); direct_vm.sender=direct_alice
+    registry=direct_deploy(REGISTRY,Address(bytes(direct_alice))); module=__import__(type(registry).__module__,fromlist=["Clause","Source"]); recovery=Address(bytes(direct_bob)); clause=module.Clause(clause_id=1,text="availability",slash_bps=100,minimum_sources=1); sources=[module.Source(source_id=1,url="https://example.com/a"),module.Source(source_id=2,url="https://example.com/b")]
+    cid=registry.create_covenant("service","description",recovery,100,10,10,[clause],sources); vault=Address(bytes.fromhex("11"*20)); registry.bind_canonical_vault(vault); direct_vm.sender=vault; registry.mark_funded(cid); direct_vm.sender=direct_alice; registry.activate(cid); direct_vm.mock_web("example\\.com",{"status":200,"body":"grounded"})
+    direct_vm.mock_llm("FROZEN",json.dumps([{"clause_id":1,"finding":"BREACHED","severity":"HIGH","evidence":[{"source_id":1,"excerpt":"fabricated"}],"observed_event_timestamp":1767225605,"reason":"bad"}])); direct_vm.warp("2026-01-01T00:00:10+00:00")
+    with pytest.raises(AssertionError): registry.run_audit(cid)
+    direct_vm.clear_mocks(); direct_vm.mock_web("example\\.com",{"status":200,"body":"grounded"})
+    direct_vm.mock_llm("FROZEN",json.dumps([{"clause_id":1,"finding":"BREACHED","severity":"HIGH","evidence":[{"source_id":1,"excerpt":"grounded"}],"observed_event_timestamp":1767225700,"reason":"late"}]))
+    with pytest.raises(AssertionError): registry.run_audit(cid)

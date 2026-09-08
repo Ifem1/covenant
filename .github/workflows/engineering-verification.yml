@@ -36,6 +36,8 @@ jobs:
           npm run lint
           npm test
           npm run build
+      - name: Production dependency audit
+        run: npm audit --omit=dev
       - name: Registry lint and schema
         run: |
           genvm-lint check contracts/covenant_registry.py

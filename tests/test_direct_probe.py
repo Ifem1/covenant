@@ -29,9 +29,8 @@ def test_control_deploys(direct_vm, direct_deploy, direct_alice):
 
 def test_validator_probe(direct_vm, direct_deploy, direct_alice):
     direct_vm.sender = direct_alice
-    direct_vm.mock_web("https://example.test", "stable evidence")
-    direct_vm.mock_llm("probe", "[]")
-    registry_path = str(ROOT / "contracts" / "covenant_registry.py")
-    registry = direct_deploy(registry_path, typed_address(registry_path, direct_alice))
-    assert registry is not None
-    assert direct_vm.run_validator(leader_result=[]) in (True, False)
+    direct_vm.check_pickling = True
+    control_path = str(ROOT / "contracts" / "direct_control.py")
+    control = direct_deploy(control_path, typed_address(control_path, direct_alice))
+    assert control.run_probe() == 'probe-ok'
+    assert direct_vm.run_validator() is True

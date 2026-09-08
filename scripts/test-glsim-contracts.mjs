@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createClient, createAccount} from 'genlayer-js';
-import {CalldataAddress} from 'genlayer-js/dist/chunk-EY35NPSE.js';
+import {CalldataAddress} from 'genlayer-js/types';
 import {hexToBytes} from 'viem';
 import {studionet} from 'genlayer-js/chains';
 

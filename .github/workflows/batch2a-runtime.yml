@@ -64,7 +64,7 @@ jobs:
         run: gltest tests/test_direct_evidence.py --contracts-dir contracts --leader-only
       - name: Direct Mode public audit suite
         if: always()
-        run: gltest tests/test_direct_audit.py --contracts-dir contracts --leader-only
+        run: gltest tests/test_direct_audit.py --contracts-dir contracts
 
   glsim-contract-runtime:
     runs-on: ubuntu-latest

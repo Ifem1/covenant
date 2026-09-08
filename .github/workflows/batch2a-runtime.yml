@@ -28,6 +28,15 @@ jobs:
         run: python -m pip install --upgrade pip 'genlayer-test==0.29.2' genvm-linter
       - name: Print Direct Mode versions
         run: python -c "import importlib.metadata as m; print(m.version('genlayer-test')); print(m.version('genlayer-py'))"
+      - name: Prepare pinned GenVM runner cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/gltest-direct"
+          curl --fail --location \
+            https://github.com/genlayerlabs/genvm/releases/download/v0.3.0-rc7/genvm-runners-all.tar.xz \
+            --output "$HOME/.cache/gltest-direct/genvm-universal-v0.3.0-rc7.tar.xz"
+          echo "e218a1854214681560351051f76fe2b878545cf3409455ef372d57014a88ca67  $HOME/.cache/gltest-direct/genvm-universal-v0.3.0-rc7.tar.xz" | sha256sum -c -
       - name: GenVM Registry lint
         run: genvm-lint check contracts/covenant_registry.py
       - name: GenVM Registry schema
@@ -37,7 +46,9 @@ jobs:
       - name: GenVM Vault schema
         run: genvm-lint schema contracts/covenant_vault.py
       - name: Direct Mode probe suite
-        run: gltest tests/test_direct_probe.py --contracts-dir contracts --leader-only
+        run: |
+          gltest tests/test_direct_probe.py --contracts-dir contracts --leader-only -k 'control_deploys or registry_deploys'
+          gltest tests/test_direct_probe.py --contracts-dir contracts --leader-only
 
   glsim-contract-runtime:
     runs-on: ubuntu-latest

@@ -64,6 +64,8 @@ class Covenant:
     remaining_slash_bps: u32
     latest_audit_id: str
     term: u64
+    unsettled_breach_count: u32
+    audit_nonce: u64
 
 class CovenantRegistry(gl.Contract):
     covenants: TreeMap[u256,Covenant]
@@ -82,7 +84,7 @@ class CovenantRegistry(gl.Contract):
     def get_latest_audit(self,covenant_id: u256) -> Audit: return self.audits[self.covenants[covenant_id].latest_audit_id]
     @gl.public.view
     def is_audit_due(self,covenant_id: u256) -> bool:
-        c=self.covenants[covenant_id]; now=gl.get_block_timestamp(); return c.status in ['ACTIVE','GOOD_STANDING','UNDER_REVIEW'] and now>=c.next_audit and now<c.expiry_timestamp
+        c=self.covenants[covenant_id]; now=gl.get_block_timestamp(); return c.status in ['ACTIVE','GOOD_STANDING','UNDER_REVIEW','BREACHED'] and c.current_interval_start<c.expiry_timestamp and now>=c.next_audit
     @gl.public.write
     def create_covenant(self,service: str,description: str,recovery: Address,minimum_bond: u256,interval: u64,term: u64,clauses: DynArray[Clause],sources: DynArray[Source]) -> u256:
         assert len(clauses)>0 and len(clauses)<=12 and len(sources)>=2 and len(sources)<=5 and interval>0 and term>=interval and minimum_bond>0 and recovery!=Address('0x0000000000000000000000000000000000000000') and recovery!=gl.message.sender_address
@@ -104,19 +106,27 @@ class CovenantRegistry(gl.Contract):
         canonical+=field('operator',gl.message.sender_address)+field('service',service)+field('description',description)+field('recovery',recovery)+field('minimum_bond',minimum_bond)+field('interval',interval)+field('term',term)
         for clause in normalized_clauses: canonical+=field('clause_id',clause.clause_id)+field('text',clause.text)+field('slash_bps',clause.slash_bps)+field('minimum_sources',clause.minimum_sources)
         for source in normalized_sources: canonical+=field('source_id',source.source_id)+field('url',source.url)
-        cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',normalized_clauses,normalized_sources,hashlib.sha256(canonical.encode()).hexdigest(),0,10000,'',term); return cid
+        cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',normalized_clauses,normalized_sources,hashlib.sha256(canonical.encode()).hexdigest(),0,10000,'',term,0,0); return cid
     @gl.public.write
     def bind_canonical_vault(self,vault: Address): assert gl.message.sender_address==self.admin and self.canonical_vault==Address('0x0000000000000000000000000000000000000000') and vault!=Address('0x0000000000000000000000000000000000000000'); self.canonical_vault=vault
     @gl.public.write
     def mark_funded(self,covenant_id: u256): c=self.covenants[covenant_id]; assert self.canonical_vault==gl.message.sender_address and c.status=='DRAFT'; c.status='FUNDED'
     @gl.public.write
     def mark_audit_settled(self,audit_id: str):
-        a=self.audits[audit_id]; assert self.canonical_vault==gl.message.sender_address; assert not a.settled; a.settled=True
+        a=self.audits[audit_id]; assert self.canonical_vault==gl.message.sender_address; assert a.outcome=='BREACH' and not a.settled; c=self.covenants[a.covenant_id]; assert c.unsettled_breach_count>0; a.settled=True; c.unsettled_breach_count-=1
     @gl.public.write
     def activate(self,covenant_id: u256): c=self.covenants[covenant_id]; assert c.operator==gl.message.sender_address and c.status=='FUNDED'; now=gl.get_block_timestamp(); c.activation_timestamp=now; c.expiry_timestamp=now+c.term; c.current_interval_start=now; c.next_audit=now+c.interval; c.status='ACTIVE'
     @gl.public.write
+    def refresh_expiry(self,covenant_id: u256) -> bool:
+        c=self.covenants[covenant_id]; assert c.status!='CLOSED'; now=gl.get_block_timestamp()
+        if c.status!='EXPIRED' and now>=c.expiry_timestamp and c.current_interval_start>=c.expiry_timestamp and c.unsettled_breach_count==0: c.status='EXPIRED'
+        return c.status=='EXPIRED'
+    @gl.public.write
+    def mark_closed(self,covenant_id: u256):
+        c=self.covenants[covenant_id]; assert self.canonical_vault==gl.message.sender_address and c.status=='EXPIRED'; c.status='CLOSED'
+    @gl.public.write
     def run_audit(self,covenant_id: u256):
-        c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id); snapshot=gl.storage.copy_to_memory(c); start=snapshot.current_interval_start; end=gl.get_block_timestamp(); clauses=gl.storage.copy_to_memory(snapshot.clauses); sources=gl.storage.copy_to_memory(snapshot.sources)
+        c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id); snapshot=gl.storage.copy_to_memory(c); start=snapshot.current_interval_start; end=min(start+snapshot.interval,snapshot.expiry_timestamp); clauses=gl.storage.copy_to_memory(snapshot.clauses); sources=gl.storage.copy_to_memory(snapshot.sources)
         def observe():
             pages=[]
             for source in sources:
@@ -156,7 +166,8 @@ class CovenantRegistry(gl.Contract):
         for frozen in clauses: assert frozen.clause_id in seen
         if outcome!='BREACH': outcome='INCONCLUSIVE' if has_inconclusive else ('UNAVAILABLE' if has_unavailable else 'CLEAN')
         assert slash<=snapshot.remaining_slash_bps
-        audit_id=hashlib.sha256((str(covenant_id)+':'+str(start)+':'+str(end)).encode()).hexdigest()
+        audit_id=hashlib.sha256((str(covenant_id)+':'+str(start)+':'+str(end)+':'+str(snapshot.audit_nonce)).encode()).hexdigest()
+        c.audit_nonce=snapshot.audit_nonce+1
         self.audits[audit_id]=Audit(covenant_id,start,end,outcome,findings,slash,snapshot.definition_hash,False)
         c=self.covenants[covenant_id]
         c.latest_audit_id=audit_id; c.latest_audit_end=end
@@ -165,5 +176,6 @@ class CovenantRegistry(gl.Contract):
         else:
             c.current_interval_start=end; c.next_audit=end+c.interval
             c.status='BREACHED' if outcome=='BREACH' else 'GOOD_STANDING'
-            if outcome=='BREACH': c.breach_count+=1; c.remaining_slash_bps-=slash
+            if outcome=='BREACH': c.breach_count+=1; c.unsettled_breach_count+=1; c.remaining_slash_bps-=slash
+            if end==c.expiry_timestamp and c.unsettled_breach_count==0: c.status='EXPIRED'
         return audit_id

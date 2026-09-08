@@ -85,7 +85,7 @@ class CovenantRegistry(gl.Contract):
     @gl.public.write
     def create_covenant(self,service: str,description: str,recovery: Address,minimum_bond: u256,interval: u64,term: u64,clauses: DynArray[Clause],sources: DynArray[Source]) -> u256:
         assert len(clauses)>0 and len(clauses)<=12 and len(sources)>=2 and len(sources)<=5 and interval>0 and term>=interval and minimum_bond>0 and recovery!=Address('0x0000000000000000000000000000000000000000') and recovery!=gl.message.sender_address
-        ids=DynArray[u32](); source_ids=DynArray[u32](); urls=DynArray[str](); total=u32(0)
+        ids=[]; source_ids=[]; urls=[]; total=u32(0)
         for clause in clauses: assert clause.clause_id>0 and clause.clause_id not in ids and clause.minimum_sources>=1 and clause.minimum_sources<=len(sources); ids.append(clause.clause_id); total+=clause.slash_bps
         for source in sources: assert source.source_id>0 and source.source_id not in source_ids and source.url.startswith('https://') and source.url not in urls; source_ids.append(source.source_id); urls.append(source.url)
         assert total<=10000

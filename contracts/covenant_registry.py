@@ -21,12 +21,17 @@ class Source:
 
 @allow_storage
 @dataclass
+class EvidenceRef:
+    source_id: u32
+    excerpt: str
+
+@allow_storage
+@dataclass
 class Finding:
     clause_id: u32
     finding: str
     severity: str
-    evidence_source_ids: DynArray[u32]
-    excerpt: str
+    evidence: DynArray[EvidenceRef]
     observed_event_date: str
     reason: str
     coverage: u32
@@ -194,7 +199,10 @@ class CovenantRegistry(gl.Contract):
             assert clause is not None
             unique_ids=self._validate_evidence(ids,excerpt,sources,clause.minimum_sources) if finding in ['COMPLIED','BREACHED'] else []
             assert finding not in ['COMPLIED','BREACHED'] or coverage>0
-            findings.append(Finding(u32(clause_id),finding,severity,ids,excerpt,event_date,reason,u32(coverage)))
+            evidence=[]
+            if finding in ['COMPLIED','BREACHED']:
+                for source_id in unique_ids: evidence.append(EvidenceRef(u32(source_id),excerpt))
+            findings.append(Finding(u32(clause_id),finding,severity,evidence,event_date,reason,u32(coverage)))
             if finding=='BREACHED': outcome='BREACH'; slash+=clause.slash_bps
             elif finding=='INCONCLUSIVE': has_inconclusive=True
             elif finding=='UNAVAILABLE': has_unavailable=True

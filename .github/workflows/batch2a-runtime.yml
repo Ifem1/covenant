@@ -59,6 +59,9 @@ jobs:
       - name: Direct Mode lifecycle suite
         if: always()
         run: gltest tests/test_direct_lifecycle.py --contracts-dir contracts --leader-only
+      - name: Direct Mode evidence suite
+        if: always()
+        run: gltest tests/test_direct_evidence.py --contracts-dir contracts --leader-only
 
   glsim-contract-runtime:
     runs-on: ubuntu-latest

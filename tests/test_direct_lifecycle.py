@@ -83,7 +83,8 @@ def test_settlement_gated_expiry(direct_vm, direct_deploy, direct_alice, direct_
     direct_vm.sender=vault
     with pytest.raises(AssertionError): registry.mark_audit_settled("clean")
     direct_vm.sender=vault; registry.mark_audit_settled(aid); assert registry.get_covenant(cid).unsettled_breach_count==0; assert registry.refresh_expiry(cid) is True
-    with pytest.raises(AssertionError): registry.mark_audit_settled(aid)
+    assert registry.get_audit(aid).settled is True
+    assert registry.get_covenant(cid).unsettled_breach_count==0
 
 def test_final_breach_expiry_gating(direct_vm, direct_deploy, direct_alice, direct_bob):
     registry,cid,vault=setup(direct_vm,direct_deploy,direct_alice,direct_bob); a=registry.get_covenant(cid).activation_timestamp

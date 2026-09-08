@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install Direct Mode tooling
-        run: python -m pip install --upgrade pip 'genlayer-test==0.29.2' genvm-linter
+        run: python -m pip install --upgrade pip 'genlayer-test==0.29.2' genvm-linter cloudpickle
       - name: Print Direct Mode versions
         run: python -c "import importlib.metadata as m; print(m.version('genlayer-test')); print(m.version('genlayer-py'))"
       - name: Prepare pinned GenVM runner cache

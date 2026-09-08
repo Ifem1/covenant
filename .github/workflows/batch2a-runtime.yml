@@ -47,7 +47,8 @@ jobs:
         run: genvm-lint schema contracts/covenant_vault.py
       - name: Direct Mode probe suite
         run: |
-          gltest tests/test_direct_probe.py --contracts-dir contracts --leader-only -k 'control_deploys or registry_deploys'
+          gltest tests/test_direct_probe.py --contracts-dir contracts --leader-only -k 'control_deploys'
+          gltest tests/test_direct_probe.py --contracts-dir contracts --leader-only -k 'registry_deploys'
           gltest tests/test_direct_probe.py --contracts-dir contracts --leader-only
 
   glsim-contract-runtime:

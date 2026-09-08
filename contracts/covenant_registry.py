@@ -1,6 +1,7 @@
 # v0.2.18
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
+import hashlib
 from dataclasses import dataclass
 
 @allow_storage
@@ -103,7 +104,7 @@ class CovenantRegistry(gl.Contract):
         canonical+=field('operator',gl.message.sender_address)+field('service',service)+field('description',description)+field('recovery',recovery)+field('minimum_bond',minimum_bond)+field('interval',interval)+field('term',term)
         for clause in normalized_clauses: canonical+=field('clause_id',clause.clause_id)+field('text',clause.text)+field('slash_bps',clause.slash_bps)+field('minimum_sources',clause.minimum_sources)
         for source in normalized_sources: canonical+=field('source_id',source.source_id)+field('url',source.url)
-        cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',normalized_clauses,normalized_sources,sha256(canonical.encode()).hex(),0,10000,'',term); return cid
+        cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',normalized_clauses,normalized_sources,hashlib.sha256(canonical.encode()).hexdigest(),0,10000,'',term); return cid
     @gl.public.write
     def bind_canonical_vault(self,vault: Address): assert gl.message.sender_address==self.admin and self.canonical_vault==Address('0x0000000000000000000000000000000000000000') and vault!=Address('0x0000000000000000000000000000000000000000'); self.canonical_vault=vault
     @gl.public.write
@@ -155,7 +156,7 @@ class CovenantRegistry(gl.Contract):
         for frozen in clauses: assert frozen.clause_id in seen
         if outcome!='BREACH': outcome='INCONCLUSIVE' if has_inconclusive else ('UNAVAILABLE' if has_unavailable else 'CLEAN')
         assert slash<=snapshot.remaining_slash_bps
-        audit_id=sha256((str(covenant_id)+':'+str(start)+':'+str(end)).encode()).hex()
+        audit_id=hashlib.sha256((str(covenant_id)+':'+str(start)+':'+str(end)).encode()).hexdigest()
         self.audits[audit_id]=Audit(covenant_id,start,end,outcome,findings,slash,snapshot.definition_hash,False)
         c=self.covenants[covenant_id]
         c.latest_audit_id=audit_id; c.latest_audit_end=end

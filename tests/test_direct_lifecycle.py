@@ -77,13 +77,32 @@ def test_settlement_gated_expiry(direct_vm, direct_deploy, direct_alice, direct_
     direct_vm.warp(iso_from_unix(a+25)); assert registry.refresh_expiry(cid) is False
     module=__import__(type(registry).__module__,fromlist=["Audit"]); aid="fixture"
     registry.audits[aid]=module.Audit(cid,a+10,a+20,"BREACH",[],100,"hash",False)
+    registry.audits["clean"]=module.Audit(cid,a+20,a+25,"CLEAN",[],0,"hash",False)
+    direct_vm.sender=direct_bob
+    with pytest.raises(AssertionError): registry.mark_audit_settled(aid)
+    direct_vm.sender=vault
+    with pytest.raises(AssertionError): registry.mark_audit_settled("clean")
     direct_vm.sender=vault; registry.mark_audit_settled(aid); assert registry.get_covenant(cid).unsettled_breach_count==0; assert registry.refresh_expiry(cid) is True
     with pytest.raises(AssertionError): registry.mark_audit_settled(aid)
 
+def test_final_breach_expiry_gating(direct_vm, direct_deploy, direct_alice, direct_bob):
+    registry,cid,vault=setup(direct_vm,direct_deploy,direct_alice,direct_bob); a=registry.get_covenant(cid).activation_timestamp
+    registry._apply_audit_lifecycle(cid,"CLEAN",0,a+10); registry._apply_audit_lifecycle(cid,"CLEAN",0,a+20); registry._apply_audit_lifecycle(cid,"BREACH",100,a+25)
+    c=registry.get_covenant(cid); assert c.current_interval_start==c.expiry_timestamp and c.status=="BREACHED" and c.unsettled_breach_count==1
+    direct_vm.warp(iso_from_unix(a+25)); assert registry.refresh_expiry(cid) is False
+    module=__import__(type(registry).__module__,fromlist=["Audit"]); aid="final-breach"; registry.audits[aid]=module.Audit(cid,a+20,a+25,"BREACH",[],100,"hash",False)
+    direct_vm.sender=vault; registry.mark_audit_settled(aid)
+    assert registry.get_covenant(cid).unsettled_breach_count==0 and registry.refresh_expiry(cid) is True and registry.get_covenant(cid).status=="EXPIRED"
+
 def test_closed_terminal_state(direct_vm, direct_deploy, direct_alice, direct_bob):
     registry,cid,vault=setup(direct_vm,direct_deploy,direct_alice,direct_bob); c=registry.get_covenant(cid)
+    direct_vm.sender=vault
+    with pytest.raises(AssertionError): registry.mark_closed(cid)
+    direct_vm.sender=direct_alice
     with pytest.raises(AssertionError): registry.mark_closed(cid)
     registry._apply_audit_lifecycle(cid,"CLEAN",0,c.activation_timestamp+10); registry._apply_audit_lifecycle(cid,"CLEAN",0,c.activation_timestamp+20); registry._apply_audit_lifecycle(cid,"CLEAN",0,c.expiry_timestamp)
+    direct_vm.sender=direct_alice
+    with pytest.raises(AssertionError): registry.mark_closed(cid)
     direct_vm.sender=vault; registry.mark_closed(cid); assert registry.get_covenant(cid).status=="CLOSED" and not registry.is_audit_due(cid)
     with pytest.raises(AssertionError): registry.refresh_expiry(cid)
 

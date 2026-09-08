@@ -146,15 +146,18 @@ class CovenantRegistry(gl.Contract):
         c=self.covenants[covenant_id]; audit_id=self._make_audit_id(covenant_id,start,end,c.audit_nonce); c.audit_nonce+=1; return audit_id
     def _normalize_excerpt(self,excerpt: str) -> str:
         return ' '.join(excerpt.split())
-    def _validate_evidence(self,ids,excerpt,sources,minimum_sources):
-        assert isinstance(ids,list) and isinstance(excerpt,str) and len(excerpt)>0 and len(excerpt)<=2000
+    def _validate_evidence(self,evidence,sources,fetched,minimum_sources):
+        assert isinstance(evidence,list) and len(evidence)<=5
         unique=[]
-        for source_id in ids:
-            assert isinstance(source_id,int) and source_id not in unique
+        for ref in evidence:
+            assert isinstance(ref,dict) and isinstance(ref.get('source_id'),int) and isinstance(ref.get('excerpt'),str)
+            source_id=ref.get('source_id'); excerpt=ref.get('excerpt')
+            assert source_id not in unique and len(excerpt)>0 and len(excerpt)<=2000
             found=False
             for source in sources:
                 if source.source_id==source_id: found=True
             assert found
+            assert fetched.get(source_id) not in [None,'UNAVAILABLE'] and self._normalize_excerpt(excerpt) in self._normalize_excerpt(fetched.get(source_id,''))
             unique.append(source_id)
         assert len(unique)>=minimum_sources
         return unique
@@ -182,29 +185,26 @@ class CovenantRegistry(gl.Contract):
                 if a.get('finding') not in allowed or b.get('finding') not in allowed: return False
                 if a.get('finding') in ['COMPLIED','BREACHED']:
                     evidence=a.get('evidence'); assert isinstance(evidence,list)
-                    ids=[x.get('source_id') for x in evidence if isinstance(x,dict)]
-                    excerpts=[x.get('excerpt') for x in evidence if isinstance(x,dict)]
-                    if not excerpts or len(set(ids))!=len(ids): return False
-                    ids=self._validate_evidence(ids,' '.join(excerpts),sources,frozen.minimum_sources)
-                    for source_id in ids:
-                        if fetched.get(source_id)=='UNAVAILABLE' or self._normalize_excerpt(a.get('excerpt')) not in self._normalize_excerpt(fetched.get(source_id,'')): return False
+                    self._validate_evidence(evidence,sources,fetched,frozen.minimum_sources)
             return True
         raw=gl.vm.run_nondet_unsafe(observe,validate); assert isinstance(raw,list) and len(raw)==len(clauses)
         findings=[]; seen=[]; outcome='CLEAN'; slash=u32(0); has_unavailable=False; has_inconclusive=False
         for item in raw:
             assert isinstance(item,dict)
-            clause_id=item.get('clause_id'); finding=item.get('finding'); severity=item.get('severity'); wire_evidence=item.get('evidence',[]); ids=[x.get('source_id') for x in wire_evidence if isinstance(x,dict)]; excerpt=' '.join([x.get('excerpt','') for x in wire_evidence if isinstance(x,dict)]); event_timestamp=item.get('observed_event_timestamp',0); reason=item.get('reason','')
+            clause_id=item.get('clause_id'); finding=item.get('finding'); severity=item.get('severity'); wire_evidence=item.get('evidence',[]); event_timestamp=item.get('observed_event_timestamp',0); reason=item.get('reason','')
             assert isinstance(clause_id,int) and isinstance(finding,str) and isinstance(severity,str) and isinstance(wire_evidence,list) and isinstance(event_timestamp,int) and isinstance(reason,str)
             assert finding in ['COMPLIED','BREACHED','INCONCLUSIVE','UNAVAILABLE'] and severity in ['NONE','LOW','MEDIUM','HIGH','CRITICAL']; assert clause_id not in seen; seen.append(u32(clause_id)); assert len(excerpt)<=2000 and len(reason)<=2000
             clause=None
             for frozen in clauses:
                 if frozen.clause_id==clause_id: clause=frozen
             assert clause is not None
-            unique_ids=self._validate_evidence(ids,excerpt,sources,clause.minimum_sources) if finding in ['COMPLIED','BREACHED'] else []
+            unique_ids=self._validate_evidence(wire_evidence,sources,fetched,clause.minimum_sources) if finding in ['COMPLIED','BREACHED'] else []
             evidence=[]
             for item in wire_evidence:
                 assert isinstance(item,dict) and isinstance(item.get('source_id'),int) and isinstance(item.get('excerpt'),str)
                 evidence.append(EvidenceRef(u32(item.get('source_id')),item.get('excerpt')))
+            if finding=='BREACHED': assert event_timestamp>0 and event_timestamp>=start and event_timestamp<=end
+            else: assert event_timestamp==0
             findings.append(Finding(u32(clause_id),finding,severity,evidence,u64(event_timestamp),reason))
             if finding=='BREACHED': outcome='BREACH'; slash+=clause.slash_bps
             elif finding=='INCONCLUSIVE': has_inconclusive=True

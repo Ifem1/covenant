@@ -1,0 +1,16 @@
+'use client';
+import Link from 'next/link';
+import {useEffect,useState} from 'react';
+import {applySlash,closeAndRefund,markClosed,readCovenant,refreshExpiry,type TxPhase} from '../../../../lib/contract/adapters';
+
+export default function Settle({params}:{params:{id:string}}){
+  const id=params.id; const [record,setRecord]=useState<any>(); const [auditId,setAuditId]=useState(''); const [phase,setPhase]=useState<TxPhase>(); const [error,setError]=useState('');
+  const load=()=>{if(!/^\d+$/.test(id)){setError('Invalid covenant ID');return}readCovenant(BigInt(id)).then(setRecord).catch(e=>setError(e instanceof Error?e.message:'Covenant not found'))};
+  useEffect(load,[id]);
+  const provider=()=>{const p=(window as Window & {ethereum?:import('viem').EIP1193Provider}).ethereum;if(!p)throw new Error('Connect a wallet to continue');return p};
+  async function act(fn:()=>Promise<unknown>){setError('');try{await fn();load()}catch(e){setPhase('FAILED');setError(e instanceof Error?e.message:'Transaction failed')}}
+  if(error&&!record)return <main className="page"><Link className="brand" href={`/c/${id}`}>COVENANT</Link><section className="section"><h1>READ ERROR</h1><p role="alert">{error}</p></section></main>;
+  if(!record)return <main className="page"><section className="section"><p className="mono">READING COVENANT {id}…</p></section></main>;
+  const busy=Boolean(phase&&phase!=='FAILED');
+  return <main className="page"><header className="top"><Link className="brand" href={`/c/${id}`}>← COVENANT {id}</Link><span className="status">● LIVE SETTLEMENT</span></header><section className="section" style={{maxWidth:760}}><div className="eyebrow">CANONICAL REGISTRY / VAULT OPERATIONS</div><h1 className="narrow" style={{fontSize:70}}>SETTLE SAFELY.</h1><div className="card"><p className="mono">STATUS · {record.status}<br/>LATEST AUDIT · {record.latest_audit_id||'none'}<br/>UNSETTLED BREACHES · {String(record.unsettled_breach_count)}</p><button className="cta" disabled={busy||record.status==='CLOSED'} onClick={()=>act(()=>refreshExpiry(provider(),BigInt(id),setPhase))}>REFRESH EXPIRY</button>{record.latest_audit_id&&<><input value={auditId} onChange={e=>setAuditId(e.target.value)} placeholder="Finalized audit ID" aria-label="Finalized audit ID"/><button className="cta" disabled={busy||!auditId} onClick={()=>act(()=>applySlash(provider(),BigInt(id),auditId,setPhase))}>APPLY SLASH</button></>}<button className="cta" disabled={busy||record.status!=='EXPIRED'} onClick={()=>act(()=>markClosed(provider(),BigInt(id),setPhase))}>MARK CLOSED</button><button className="cta" disabled={busy||record.status!=='CLOSED'} onClick={()=>act(()=>closeAndRefund(provider(),BigInt(id),setPhase))}>CLOSE &amp; REFUND</button>{phase&&<p className="mono">{phase}</p>}{error&&<p role="alert" style={{color:'var(--red)'}}>{error}</p>}</div></section></main>
+}

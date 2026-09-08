@@ -124,7 +124,7 @@ class CovenantRegistry(gl.Contract):
                 if a.get('finding') in ['COMPLIED','BREACHED'] and (not a.get('evidence_source_ids') or not a.get('excerpt')): return False
             return True
         raw=gl.vm.run_nondet_unsafe(observe,validate); assert isinstance(raw,list) and len(raw)==len(clauses)
-        findings=DynArray[Finding](); seen=DynArray[u32](); outcome='CLEAN'; slash=u32(0)
+        findings=DynArray[Finding](); seen=DynArray[u32](); outcome='CLEAN'; slash=u32(0); has_unavailable=False; has_inconclusive=False
         for item in raw:
             assert isinstance(item,dict)
             clause_id=item.get('clause_id'); finding=item.get('finding'); severity=item.get('severity'); ids=item.get('evidence_source_ids'); excerpt=item.get('excerpt'); event_date=item.get('observed_event_date'); reason=item.get('reason'); coverage=item.get('coverage')
@@ -141,8 +141,11 @@ class CovenantRegistry(gl.Contract):
             assert finding not in ['COMPLIED','BREACHED'] or (len(unique_ids)>=clause.minimum_sources and len(excerpt)>0 and coverage>0)
             findings.append(Finding(u32(clause_id),finding,severity,ids,excerpt,event_date,reason,u32(coverage)))
             if finding=='BREACHED': outcome='BREACH'; slash+=clause.slash_bps
-            elif finding in ['INCONCLUSIVE','UNAVAILABLE'] and outcome!='BREACH': outcome=finding
+            elif finding=='INCONCLUSIVE': has_inconclusive=True
+            elif finding=='UNAVAILABLE': has_unavailable=True
         for frozen in clauses: assert frozen.clause_id in seen
+        if outcome!='BREACH': outcome='INCONCLUSIVE' if has_inconclusive else ('UNAVAILABLE' if has_unavailable else 'CLEAN')
+        assert slash<=snapshot.remaining_slash_bps
         audit_id=sha256((str(covenant_id)+':'+str(start)+':'+str(end)).encode()).hex()
         self.audits[audit_id]=Audit(covenant_id,start,end,outcome,findings,slash,snapshot.definition_hash,False)
         c=self.covenants[covenant_id]
@@ -152,5 +155,5 @@ class CovenantRegistry(gl.Contract):
         else:
             c.current_interval_start=end; c.next_audit=end+c.interval
             c.status='BREACHED' if outcome=='BREACH' else 'GOOD_STANDING'
-            if outcome=='BREACH': c.breach_count+=1; c.remaining_slash_bps=max(u32(0),c.remaining_slash_bps-slash)
+            if outcome=='BREACH': c.breach_count+=1; c.remaining_slash_bps-=slash
         return audit_id

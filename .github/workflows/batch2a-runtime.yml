@@ -1,0 +1,72 @@
+name: Batch 2A GenLayer runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact hardening branch or commit to test
+        required: true
+        default: codex/contract-foundation-hardening
+
+jobs:
+  glsim-contract-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact hardening ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install GenLayer runtime tooling
+        run: python -m pip install --upgrade pip 'genlayer-test[sim]'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: GenVM Registry lint
+        run: genvm-lint check contracts/covenant_registry.py
+
+      - name: GenVM Registry schema
+        run: genvm-lint schema contracts/covenant_registry.py
+
+      - name: GenVM Vault lint
+        run: genvm-lint check contracts/covenant_vault.py
+
+      - name: GenVM Vault schema
+        run: genvm-lint schema contracts/covenant_vault.py
+
+      - name: Start deterministic GLSim
+        shell: bash
+        run: |
+          set -o pipefail
+          glsim --chain-id 61999 --validators 5 --seed batch2a --no-browser 2>&1 | tee glsim.log &
+          echo $! > glsim.pid
+          for i in $(seq 1 60); do
+            if curl --fail --silent --show-error -X POST http://127.0.0.1:4000/api \
+              -H 'content-type: application/json' \
+              --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat glsim.log
+          exit 1
+
+      - name: Run Batch 2A contract runtime harness
+        run: node scripts/test-glsim-contracts.mjs
+
+      - name: Publish GLSim log
+        if: always()
+        run: test ! -f glsim.log || cat glsim.log

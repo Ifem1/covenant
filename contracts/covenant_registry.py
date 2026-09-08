@@ -85,16 +85,25 @@ class CovenantRegistry(gl.Contract):
     @gl.public.write
     def create_covenant(self,service: str,description: str,recovery: Address,minimum_bond: u256,interval: u64,term: u64,clauses: DynArray[Clause],sources: DynArray[Source]) -> u256:
         assert len(clauses)>0 and len(clauses)<=12 and len(sources)>=2 and len(sources)<=5 and interval>0 and term>=interval and minimum_bond>0 and recovery!=Address('0x0000000000000000000000000000000000000000') and recovery!=gl.message.sender_address
-        ids=[]; source_ids=[]; urls=[]; total=u32(0)
-        for clause in clauses: assert clause.clause_id>0 and clause.clause_id not in ids and clause.minimum_sources>=1 and clause.minimum_sources<=len(sources); ids.append(clause.clause_id); total+=clause.slash_bps
-        for source in sources: assert source.source_id>0 and source.source_id not in source_ids and source.url.startswith('https://') and source.url not in urls; source_ids.append(source.source_id); urls.append(source.url)
+        normalized_sources=[]; source_ids=[]; urls=[]
+        for raw in sources:
+            assert isinstance(raw,dict) and isinstance(raw.get('source_id'),int) and isinstance(raw.get('url'),str)
+            source=Source(u32(raw.get('source_id')),raw.get('url'))
+            assert source.source_id>0 and source.source_id not in source_ids and source.url.startswith('https://') and source.url not in urls
+            normalized_sources.append(source); source_ids.append(source.source_id); urls.append(source.url)
+        normalized_clauses=[]; ids=[]; total=u32(0)
+        for raw in clauses:
+            assert isinstance(raw,dict) and isinstance(raw.get('clause_id'),int) and isinstance(raw.get('text'),str) and isinstance(raw.get('slash_bps'),int) and isinstance(raw.get('minimum_sources'),int)
+            clause=Clause(u32(raw.get('clause_id')),raw.get('text'),u32(raw.get('slash_bps')),u32(raw.get('minimum_sources')))
+            assert clause.clause_id>0 and clause.clause_id not in ids and clause.minimum_sources>=1 and clause.minimum_sources<=len(normalized_sources)
+            normalized_clauses.append(clause); ids.append(clause.clause_id); total+=clause.slash_bps
         assert total<=10000
         canonical=''
         def field(key,value): return str(len(key))+':'+key+str(len(str(value)))+':'+str(value)
         canonical+=field('operator',gl.message.sender_address)+field('service',service)+field('description',description)+field('recovery',recovery)+field('minimum_bond',minimum_bond)+field('interval',interval)+field('term',term)
-        for clause in clauses: canonical+=field('clause_id',clause.clause_id)+field('text',clause.text)+field('slash_bps',clause.slash_bps)+field('minimum_sources',clause.minimum_sources)
-        for source in sources: canonical+=field('source_id',source.source_id)+field('url',source.url)
-        cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',clauses,sources,sha256(canonical.encode()).hex(),0,10000,'',term); return cid
+        for clause in normalized_clauses: canonical+=field('clause_id',clause.clause_id)+field('text',clause.text)+field('slash_bps',clause.slash_bps)+field('minimum_sources',clause.minimum_sources)
+        for source in normalized_sources: canonical+=field('source_id',source.source_id)+field('url',source.url)
+        cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',normalized_clauses,normalized_sources,sha256(canonical.encode()).hex(),0,10000,'',term); return cid
     @gl.public.write
     def bind_canonical_vault(self,vault: Address): assert gl.message.sender_address==self.admin and self.canonical_vault==Address('0x0000000000000000000000000000000000000000') and vault!=Address('0x0000000000000000000000000000000000000000'); self.canonical_vault=vault
     @gl.public.write

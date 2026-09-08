@@ -85,6 +85,8 @@ class CovenantRegistry(gl.Contract):
     @gl.public.view
     def get_canonical_vault(self) -> Address: return self.canonical_vault
     @gl.public.view
+    def get_covenant_count(self) -> u256: return self.next_id
+    @gl.public.view
     def get_audit(self,audit_id: str) -> Audit: return self.audits[audit_id]
     @gl.public.view
     def get_latest_audit(self,covenant_id: u256) -> Audit: return self.audits[self.covenants[covenant_id].latest_audit_id]

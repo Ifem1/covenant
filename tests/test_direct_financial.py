@@ -13,6 +13,13 @@ def test_original_principal_slash_arithmetic(direct_vm,direct_deploy,direct_alic
     first=vault._target_slashed(cid,2500); second=vault._target_slashed(cid,5000); final=vault._target_slashed(cid,10000)
     assert first==250 and second==500 and final==1000
     assert second-first==250 and final-second==500
+    vault.consumed_slash_bps[cid]=5000
+    vault.slashed_amount[cid]=500
+    assert vault.get_principal(cid)==1000
+    assert vault.get_bond(cid)==1000
+    assert vault.get_consumed_slash_bps(cid)==5000
+    assert vault.get_slashed_amount(cid)==500
+    assert vault.get_pending_slash_count(cid)==0
 
 def test_staged_state_defaults_are_zero(direct_vm,direct_deploy,direct_alice):
     from gltest.direct.sdk_loader import setup_sdk_paths

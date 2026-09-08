@@ -8,7 +8,7 @@ REGISTRY = str(ROOT / "contracts" / "covenant_registry.py")
 def iso_from_unix(ts):
     return datetime.datetime.fromtimestamp(int(ts), tz=datetime.timezone.utc).isoformat()
 
-def setup(vm, deploy, alice, bob):
+def create_draft(vm, deploy, alice, bob):
     vm.check_pickling = True
     vm.warp("2026-01-01T00:00:00+00:00")
     from gltest.direct.sdk_loader import setup_sdk_paths
@@ -21,15 +21,30 @@ def setup(vm, deploy, alice, bob):
     clauses = [module.Clause(clause_id=1, text="availability", slash_bps=100, minimum_sources=1)]
     sources = [module.Source(source_id=1, url="https://example.com/a"), module.Source(source_id=2, url="https://example.com/b")]
     cid = registry.create_covenant("service", "description", recovery, 100, 10, 25, clauses, sources)
-    vault = Address(bytes.fromhex("11" * 20))
+    return registry, cid, Address(bytes.fromhex("11" * 20)), module
+
+def setup(vm, deploy, alice, bob):
+    registry, cid, vault, _ = create_draft(vm, deploy, alice, bob)
     registry.bind_canonical_vault(vault)
     vm.sender = vault; registry.mark_funded(cid); vm.sender = alice; registry.activate(cid)
     return registry, cid, vault
 
 def test_activation_and_due_boundaries(direct_vm, direct_deploy, direct_alice, direct_bob):
-    registry, cid, vault = setup(direct_vm, direct_deploy, direct_alice, direct_bob)
+    registry, cid, vault, _ = create_draft(direct_vm, direct_deploy, direct_alice, direct_bob)
+    assert registry.refresh_expiry(cid) is False
+    with pytest.raises(AssertionError): registry.activate(cid)
+    with pytest.raises(AssertionError): registry.mark_funded(cid)
+    registry.bind_canonical_vault(vault)
+    with pytest.raises(AssertionError): registry.mark_funded(cid)
+    direct_vm.sender = vault; registry.mark_funded(cid)
+    direct_vm.sender = direct_bob
+    with pytest.raises(AssertionError): registry.activate(cid)
+    direct_vm.sender = direct_alice
+    assert registry.refresh_expiry(cid) is False
+    registry.activate(cid)
     c = registry.get_covenant(cid); activation = c.activation_timestamp
-    assert c.expiry_timestamp == activation + 25 and c.current_interval_start == activation and c.next_audit == activation + 10
+    assert activation == 1767225600
+    assert c.expiry_timestamp == 1767225625 and c.current_interval_start == 1767225600 and c.next_audit == 1767225610
     with pytest.raises(AssertionError): registry.activate(cid)
     direct_vm.warp(iso_from_unix(activation + 9)); assert registry.is_audit_due(cid) is False
     direct_vm.warp(iso_from_unix(activation + 10)); assert registry.is_audit_due(cid) is True
@@ -59,10 +74,9 @@ def test_nonfinal_breach_continuation(direct_vm, direct_deploy, direct_alice, di
 def test_settlement_gated_expiry(direct_vm, direct_deploy, direct_alice, direct_bob):
     registry, cid, vault = setup(direct_vm, direct_deploy, direct_alice, direct_bob); a=registry.get_covenant(cid).activation_timestamp
     registry._apply_audit_lifecycle(cid,"BREACH",100,a+10); registry._apply_audit_lifecycle(cid,"CLEAN",0,a+20); registry._apply_audit_lifecycle(cid,"CLEAN",0,a+25)
-    vm.warp(iso_from_unix(a+25)); assert registry.refresh_expiry(cid) is False
+    direct_vm.warp(iso_from_unix(a+25)); assert registry.refresh_expiry(cid) is False
     module=__import__(type(registry).__module__,fromlist=["Audit"]); aid="fixture"
     registry.audits[aid]=module.Audit(cid,a+10,a+20,"BREACH",[],100,"hash",False)
-    direct_vm.warp(iso_from_unix(a+25)); assert registry.refresh_expiry(cid) is False
     direct_vm.sender=vault; registry.mark_audit_settled(aid); assert registry.get_covenant(cid).unsettled_breach_count==0; assert registry.refresh_expiry(cid) is True
     with pytest.raises(AssertionError): registry.mark_audit_settled(aid)
 

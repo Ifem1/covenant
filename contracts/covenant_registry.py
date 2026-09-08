@@ -10,7 +10,6 @@ class Clause:
     text: str
     slash_bps: u32
     minimum_sources: u32
-    enabled: bool
 
 @allow_storage
 @dataclass
@@ -70,7 +69,8 @@ class CovenantRegistry(gl.Contract):
     audits: TreeMap[str,Audit]
     next_id: u256
     canonical_vault: Address
-    def __init__(self, canonical_vault: Address): self.canonical_vault=canonical_vault
+    admin: Address
+    def __init__(self, admin: Address): self.admin=admin
     @gl.public.view
     def get_covenant(self,covenant_id: u256) -> Covenant: return self.covenants[covenant_id]
     @gl.public.view
@@ -85,15 +85,16 @@ class CovenantRegistry(gl.Contract):
     @gl.public.write
     def create_covenant(self,service: str,description: str,recovery: Address,minimum_bond: u256,interval: u64,term: u64,clauses: DynArray[Clause],sources: DynArray[Source]) -> u256:
         assert len(clauses)>0 and len(clauses)<=12 and len(sources)>=2 and len(sources)<=5 and interval>0 and term>=interval and minimum_bond>0 and recovery!=Address('0x0000000000000000000000000000000000000000') and recovery!=gl.message.sender_address
-        ids=DynArray[u32](); source_ids=DynArray[u32](); total=u32(0)
-        for clause in clauses: assert clause.clause_id>0 and clause.clause_id not in ids and clause.minimum_sources>=1 and clause.minimum_sources<=len(sources); ids.append(clause.clause_id); total+=clause.slash_bps if clause.enabled else 0
-        for source in sources: assert source.source_id>0 and source.source_id not in source_ids and len(source.url)>0; source_ids.append(source.source_id)
+        ids=DynArray[u32](); source_ids=DynArray[u32](); urls=DynArray[str](); total=u32(0)
+        for clause in clauses: assert clause.clause_id>0 and clause.clause_id not in ids and clause.minimum_sources>=1 and clause.minimum_sources<=len(sources); ids.append(clause.clause_id); total+=clause.slash_bps
+        for source in sources: assert source.source_id>0 and source.source_id not in source_ids and source.url.startswith('https://') and source.url not in urls; source_ids.append(source.source_id); urls.append(source.url)
         assert total<=10000
-        canonical=str(len(service))+':'+service+str(len(description))+':'+description+str(recovery)+str(minimum_bond)+str(interval)+str(term)
-        for clause in clauses: canonical+=str(clause.clause_id)+str(len(clause.text))+':'+clause.text+str(clause.slash_bps)+str(clause.minimum_sources)+str(clause.enabled)
-        for source in sources: canonical+=str(source.source_id)+str(len(source.url))+':'+source.url
+        canonical='operator='+str(gl.message.sender_address)+'|service='+service+'|description='+description+'|recovery='+str(recovery)+'|minimum_bond='+str(minimum_bond)+'|interval='+str(interval)+'|term='+str(term)
+        for clause in clauses: canonical+='|clause_id='+str(clause.clause_id)+'|text='+clause.text+'|slash_bps='+str(clause.slash_bps)+'|minimum_sources='+str(clause.minimum_sources)
+        for source in sources: canonical+='|source_id='+str(source.source_id)+'|url='+source.url
         cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',clauses,sources,sha256(canonical.encode()).hex(),0,10000,'',term); return cid
     @gl.public.write
+    def bind_canonical_vault(self,vault: Address): assert gl.message.sender_address==self.admin and self.canonical_vault==Address('0x0000000000000000000000000000000000000000') and vault!=Address('0x0000000000000000000000000000000000000000'); self.canonical_vault=vault
     @gl.public.write
     def mark_funded(self,covenant_id: u256): c=self.covenants[covenant_id]; assert self.canonical_vault==gl.message.sender_address and c.status=='DRAFT'; c.status='FUNDED'
     @gl.public.write
@@ -118,7 +119,7 @@ class CovenantRegistry(gl.Contract):
             for a,b in zip(candidate,independent):
                 if a.get('clause_id')!=b.get('clause_id') or a.get('finding')!=b.get('finding') or a.get('coverage')!=b.get('coverage') or a.get('observed_event_date')!=b.get('observed_event_date'): return False
                 if a.get('finding') not in allowed or b.get('finding') not in allowed: return False
-                if a.get('finding')=='BREACHED' and (not a.get('evidence_source_ids') or not a.get('excerpt')): return False
+                if a.get('finding') in ['COMPLIED','BREACHED'] and (not a.get('evidence_source_ids') or not a.get('excerpt')): return False
             return True
         raw=gl.vm.run_nondet_unsafe(observe,validate); assert isinstance(raw,list) and len(raw)==len(clauses)
         findings=DynArray[Finding](); seen=DynArray[u32](); outcome='COMPLIED'; slash=u32(0)
@@ -133,10 +134,12 @@ class CovenantRegistry(gl.Contract):
             assert clause is not None
             for source_id in ids:
                 assert any(source.source_id==source_id for source in sources)
-            assert finding!='BREACHED' or (len(ids)>0 and len(excerpt)>0 and coverage>0)
+            unique_ids=DynArray[u32]()
+            for source_id in ids: assert source_id not in unique_ids; unique_ids.append(u32(source_id))
+            assert finding not in ['COMPLIED','BREACHED'] or (len(unique_ids)>=clause.minimum_sources and len(excerpt)>0 and coverage>0)
             findings.append(Finding(u32(clause_id),finding,severity,ids,excerpt,event_date,reason,u32(coverage)))
-            if finding=='BREACHED': outcome='BREACHED'; slash+=clause.slash_bps
-            elif finding in ['INCONCLUSIVE','UNAVAILABLE'] and outcome!='BREACHED': outcome=finding
+            if finding=='BREACHED': outcome='BREACH'; slash+=clause.slash_bps
+            elif finding in ['INCONCLUSIVE','UNAVAILABLE'] and outcome!='BREACH': outcome=finding
         for frozen in clauses: assert frozen.clause_id in seen
         audit_id=sha256((str(covenant_id)+':'+str(start)+':'+str(end)).encode()).hex()
         self.audits[audit_id]=Audit(covenant_id,start,end,outcome,findings,slash,snapshot.definition_hash,False)
@@ -146,6 +149,6 @@ class CovenantRegistry(gl.Contract):
             c.status='UNDER_REVIEW'; c.next_audit=end
         else:
             c.current_interval_start=end; c.next_audit=end+c.interval
-            c.status='BREACHED' if outcome=='BREACHED' else 'GOOD_STANDING'
-            if outcome=='BREACHED': c.breach_count+=1; c.remaining_slash_bps=max(u32(0),c.remaining_slash_bps-slash)
+            c.status='BREACHED' if outcome=='BREACH' else 'GOOD_STANDING'
+            if outcome=='BREACH': c.breach_count+=1; c.remaining_slash_bps=max(u32(0),c.remaining_slash_bps-slash)
         return audit_id

@@ -1,5 +1,7 @@
-import {publicClient,walletClient,type TxPhase} from '../wallet/client'; import {vaultAbi} from './abi'; import type {Address,EIP1193Provider,Hash} from 'viem'; export type {TxPhase} from '../wallet/client';
+import {publicClient,walletClient,type TxPhase} from '../wallet/client'; import {registryAbi,vaultAbi} from './abi'; import type {Address,EIP1193Provider,Hash} from 'viem'; export type {TxPhase} from '../wallet/client';
 const vault=(process.env.NEXT_PUBLIC_VAULT_ADDRESS||'') as Address;
+const registry=(process.env.NEXT_PUBLIC_REGISTRY_ADDRESS||'') as Address;
 export function configured(){return Boolean(vault)}
+export async function readCanonicalVault(){if(!registry) throw new Error('Registry address is not configured'); return publicClient.readContract({address:registry,abi:registryAbi,functionName:'get_canonical_vault',args:[]})}
 export async function readBond(id:bigint){if(!vault) throw new Error('Vault address is not configured'); return publicClient.readContract({address:vault,abi:vaultAbi,functionName:'get_bond',args:[id]})}
 export async function depositBond(provider:EIP1193Provider,id:bigint,value:bigint,onPhase?:(p:TxPhase)=>void){if(!vault)throw new Error('Vault address is not configured'); const client=walletClient(provider); const [account]=await client.getAddresses(); onPhase?.('AWAITING_SIGNATURE'); const hash=await client.writeContract({account,address:vault,abi:vaultAbi,functionName:'deposit_bond',args:[id],value}); onPhase?.('SUBMITTED'); const receipt=await publicClient.waitForTransactionReceipt({hash}); onPhase?.('FINALIZED'); if(receipt.status!=='success'){onPhase?.('FAILED');throw new Error('GenVM execution failed')} onPhase?.('EXECUTION_CONFIRMED'); return hash as Hash}

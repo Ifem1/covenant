@@ -63,15 +63,18 @@ class Covenant:
     breach_count: u32
     remaining_slash_bps: u32
     latest_audit_id: str
-    vault: Address
+    term: u64
 
 class CovenantRegistry(gl.Contract):
     covenants: TreeMap[u256,Covenant]
     audits: TreeMap[str,Audit]
     next_id: u256
-    def __init__(self): pass
+    canonical_vault: Address
+    def __init__(self, canonical_vault: Address): self.canonical_vault=canonical_vault
     @gl.public.view
     def get_covenant(self,covenant_id: u256) -> Covenant: return self.covenants[covenant_id]
+    @gl.public.view
+    def get_canonical_vault(self) -> Address: return self.canonical_vault
     @gl.public.view
     def get_audit(self,audit_id: str) -> Audit: return self.audits[audit_id]
     @gl.public.view
@@ -81,20 +84,26 @@ class CovenantRegistry(gl.Contract):
         c=self.covenants[covenant_id]; now=gl.get_block_timestamp(); return c.status in ['ACTIVE','GOOD_STANDING','UNDER_REVIEW'] and now>=c.next_audit and now<c.expiry_timestamp
     @gl.public.write
     def create_covenant(self,service: str,description: str,recovery: Address,minimum_bond: u256,interval: u64,term: u64,clauses: DynArray[Clause],sources: DynArray[Source]) -> u256:
-        assert len(clauses)>0 and len(clauses)<=12 and len(sources)>=2 and len(sources)<=5 and interval>0 and term>=interval and sum(x.slash_bps for x in clauses)<=10000
-        cid=self.next_id; self.next_id+=1; now=gl.get_block_timestamp(); self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,now+term,0,now+interval,0,'DRAFT',clauses,sources,sha256((service+description).encode()).hex(),0,10000,'',Address('0x0000000000000000000000000000000000000000')); return cid
+        assert len(clauses)>0 and len(clauses)<=12 and len(sources)>=2 and len(sources)<=5 and interval>0 and term>=interval and minimum_bond>0 and recovery!=Address('0x0000000000000000000000000000000000000000') and recovery!=gl.message.sender_address
+        ids=DynArray[u32](); source_ids=DynArray[u32](); total=u32(0)
+        for clause in clauses: assert clause.clause_id>0 and clause.clause_id not in ids and clause.minimum_sources>=1 and clause.minimum_sources<=len(sources); ids.append(clause.clause_id); total+=clause.slash_bps if clause.enabled else 0
+        for source in sources: assert source.source_id>0 and source.source_id not in source_ids and len(source.url)>0; source_ids.append(source.source_id)
+        assert total<=10000
+        canonical=str(len(service))+':'+service+str(len(description))+':'+description+str(recovery)+str(minimum_bond)+str(interval)+str(term)
+        for clause in clauses: canonical+=str(clause.clause_id)+str(len(clause.text))+':'+clause.text+str(clause.slash_bps)+str(clause.minimum_sources)+str(clause.enabled)
+        for source in sources: canonical+=str(source.source_id)+str(len(source.url))+':'+source.url
+        cid=self.next_id; self.next_id+=1; self.covenants[cid]=Covenant(gl.message.sender_address,recovery,service,description,minimum_bond,interval,0,0,0,0,0,'DRAFT',clauses,sources,sha256(canonical.encode()).hex(),0,10000,'',term); return cid
     @gl.public.write
-    def set_vault(self,covenant_id: u256,vault: Address): c=self.covenants[covenant_id]; assert c.operator==gl.message.sender_address and c.status=='DRAFT'; c.vault=vault
     @gl.public.write
-    def mark_funded(self,covenant_id: u256): c=self.covenants[covenant_id]; assert c.vault==gl.message.sender_address and c.status=='DRAFT'; c.status='FUNDED'
+    def mark_funded(self,covenant_id: u256): c=self.covenants[covenant_id]; assert self.canonical_vault==gl.message.sender_address and c.status=='DRAFT'; c.status='FUNDED'
     @gl.public.write
     def mark_audit_settled(self,audit_id: str):
-        a=self.audits[audit_id]; c=self.covenants[a.covenant_id]; assert c.vault==gl.message.sender_address; assert not a.settled; a.settled=True
+        a=self.audits[audit_id]; assert self.canonical_vault==gl.message.sender_address; assert not a.settled; a.settled=True
     @gl.public.write
-    def activate(self,covenant_id: u256): c=self.covenants[covenant_id]; assert c.operator==gl.message.sender_address and c.status=='FUNDED'; now=gl.get_block_timestamp(); c.activation_timestamp=now; c.current_interval_start=now; c.next_audit=now+c.interval; c.status='ACTIVE'
+    def activate(self,covenant_id: u256): c=self.covenants[covenant_id]; assert c.operator==gl.message.sender_address and c.status=='FUNDED'; now=gl.get_block_timestamp(); c.activation_timestamp=now; c.expiry_timestamp=now+c.term; c.current_interval_start=now; c.next_audit=now+c.interval; c.status='ACTIVE'
     @gl.public.write
     def run_audit(self,covenant_id: u256):
-        c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id); snapshot=gl.storage.copy_to_memory(c); start=snapshot.activation_timestamp if snapshot.latest_audit_id=='' else snapshot.latest_audit_end; end=gl.get_block_timestamp(); clauses=gl.storage.copy_to_memory(snapshot.clauses); sources=gl.storage.copy_to_memory(snapshot.sources)
+        c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id); snapshot=gl.storage.copy_to_memory(c); start=snapshot.current_interval_start; end=gl.get_block_timestamp(); clauses=gl.storage.copy_to_memory(snapshot.clauses); sources=gl.storage.copy_to_memory(snapshot.sources)
         def observe():
             pages=[]
             for source in sources:
@@ -111,8 +120,7 @@ class CovenantRegistry(gl.Contract):
                 if a.get('finding') not in allowed or b.get('finding') not in allowed: return False
                 if a.get('finding')=='BREACHED' and (not a.get('evidence_source_ids') or not a.get('excerpt')): return False
             return True
-        result=gl.vm.run_nondet_unsafe(observe,validate); assert isinstance(result,gl.vm.Return)
-        raw=result.calldata; assert isinstance(raw,list) and len(raw)==len(clauses)
+        raw=gl.vm.run_nondet_unsafe(observe,validate); assert isinstance(raw,list) and len(raw)==len(clauses)
         findings=DynArray[Finding](); seen=DynArray[u32](); outcome='COMPLIED'; slash=u32(0)
         for item in raw:
             assert isinstance(item,dict)

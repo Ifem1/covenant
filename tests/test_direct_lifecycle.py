@@ -23,13 +23,33 @@ def test_lifecycle_scheduling_and_expiry_guard(direct_vm, direct_deploy, direct_
     with pytest.raises(AssertionError): registry.activate(cid)
     vault = typed(REGISTRY, bytes.fromhex("11" * 20))
     registry.bind_canonical_vault(vault)
+    direct_vm.sender = vault
     registry.mark_funded(cid)
+    direct_vm.sender = direct_alice
     registry.activate(cid)
     c = registry.get_covenant(cid)
     assert c.activation_timestamp > 0 and c.expiry_timestamp == c.activation_timestamp + 25
     assert c.current_interval_start == c.activation_timestamp
     assert c.next_audit == min(c.activation_timestamp + 10, c.expiry_timestamp)
+    with pytest.raises(AssertionError): registry.activate(cid)
+    # The private production helper is the source of truth for scheduled transitions.
+    registry._apply_audit_lifecycle(cid, "CLEAN", 0, c.activation_timestamp + 10)
+    c = registry.get_covenant(cid)
+    assert c.current_interval_start == c.activation_timestamp + 10 and c.next_audit == c.activation_timestamp + 20
+    registry._apply_audit_lifecycle(cid, "INCONCLUSIVE", 0, c.next_audit)
+    c = registry.get_covenant(cid)
+    assert c.status == "UNDER_REVIEW" and c.current_interval_start == c.activation_timestamp + 10 and c.next_audit == c.activation_timestamp + 20
+    registry._apply_audit_lifecycle(cid, "UNAVAILABLE", 0, c.next_audit)
+    c = registry.get_covenant(cid)
+    assert c.current_interval_start == c.activation_timestamp + 10 and c.next_audit == c.activation_timestamp + 20
+    registry._apply_audit_lifecycle(cid, "CLEAN", 0, c.next_audit)
+    c = registry.get_covenant(cid)
+    assert c.current_interval_start == c.activation_timestamp + 20 and c.next_audit == c.expiry_timestamp
+    registry._apply_audit_lifecycle(cid, "BREACH", 100, c.expiry_timestamp)
+    c = registry.get_covenant(cid)
+    assert c.status == "BREACHED" and c.breach_count == 1 and c.unsettled_breach_count == 1
+    assert registry._make_audit_id(cid, 1, 2, 0) != registry._make_audit_id(cid, 1, 2, 1)
     direct_vm.warp(c.next_audit)
-    assert registry.is_audit_due(cid) is True
+    assert registry.is_audit_due(cid) is False
     direct_vm.warp(c.expiry_timestamp + 100)
     assert registry.refresh_expiry(cid) is False

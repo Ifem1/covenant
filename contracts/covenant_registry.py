@@ -134,6 +134,8 @@ class CovenantRegistry(gl.Contract):
         else: c.status='GOOD_STANDING'
         if scheduled_end<c.expiry_timestamp: c.next_audit=min(scheduled_end+c.interval,c.expiry_timestamp)
         elif c.unsettled_breach_count==0: c.status='EXPIRED'
+    def _make_audit_id(self,covenant_id: u256,start: u64,end: u64,nonce: u64) -> str:
+        return hashlib.sha256((str(covenant_id)+':'+str(start)+':'+str(end)+':'+str(nonce)).encode()).hexdigest()
     @gl.public.write
     def run_audit(self,covenant_id: u256):
         c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id); snapshot=gl.storage.copy_to_memory(c); start=snapshot.current_interval_start; end=min(start+snapshot.interval,snapshot.expiry_timestamp); clauses=gl.storage.copy_to_memory(snapshot.clauses); sources=gl.storage.copy_to_memory(snapshot.sources)
@@ -176,7 +178,7 @@ class CovenantRegistry(gl.Contract):
         for frozen in clauses: assert frozen.clause_id in seen
         if outcome!='BREACH': outcome='INCONCLUSIVE' if has_inconclusive else ('UNAVAILABLE' if has_unavailable else 'CLEAN')
         assert slash<=snapshot.remaining_slash_bps
-        audit_id=hashlib.sha256((str(covenant_id)+':'+str(start)+':'+str(end)+':'+str(snapshot.audit_nonce)).encode()).hexdigest()
+        audit_id=self._make_audit_id(covenant_id,start,end,snapshot.audit_nonce)
         c.audit_nonce=snapshot.audit_nonce+1
         self.audits[audit_id]=Audit(covenant_id,start,end,outcome,findings,slash,snapshot.definition_hash,False)
         c=self.covenants[covenant_id]

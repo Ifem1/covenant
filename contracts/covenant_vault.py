@@ -28,6 +28,14 @@ class CovenantVault(gl.Contract):
         return self.principal.get(covenant_id,u256(0))*consumed_bps//10000
     @gl.public.view
     def get_bond(self,covenant_id: u256) -> u256: return self.bonds.get(covenant_id,u256(0))
+    @gl.public.view
+    def get_principal(self,covenant_id: u256) -> u256: return self.principal.get(covenant_id,u256(0))
+    @gl.public.view
+    def get_consumed_slash_bps(self,covenant_id: u256) -> u32: return self.consumed_slash_bps.get(covenant_id,u32(0))
+    @gl.public.view
+    def get_slashed_amount(self,covenant_id: u256) -> u256: return self.slashed_amount.get(covenant_id,u256(0))
+    @gl.public.view
+    def get_pending_slash_count(self,covenant_id: u256) -> u32: return self.pending_slash_count.get(covenant_id,u32(0))
     @gl.public.write.payable
     def deposit_bond(self,covenant_id):
         c=RegistryInterface(self.registry).view().get_covenant(covenant_id); assert RegistryInterface(self.registry).view().get_canonical_vault()==gl.message.contract_address and c.operator==gl.message.sender_address and c.status=='DRAFT' and gl.message.value>=c.minimum_bond; assert self.bonds.get(covenant_id,u256(0))==0; self.principal[covenant_id]=gl.message.value; self.bonds[covenant_id]=gl.message.value; RegistryInterface(self.registry).emit(on='finalized').mark_funded(covenant_id)

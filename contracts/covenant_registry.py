@@ -163,7 +163,7 @@ class CovenantRegistry(gl.Contract):
         return unique
     @gl.public.write
     def run_audit(self,covenant_id: u256):
-        c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id); snapshot=gl.storage.copy_to_memory(c); start=snapshot.current_interval_start; end=min(start+snapshot.interval,snapshot.expiry_timestamp); clauses=gl.storage.copy_to_memory(snapshot.clauses); sources=gl.storage.copy_to_memory(snapshot.sources)
+        c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id); snapshot=gl.storage.copy_to_memory(c); start=snapshot.current_interval_start; end=min(start+snapshot.interval,snapshot.expiry_timestamp); clauses=snapshot.clauses; sources=snapshot.sources
         fetched={}
         def observe():
             pages=[]

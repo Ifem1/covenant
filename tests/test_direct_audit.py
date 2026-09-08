@@ -70,7 +70,7 @@ def test_public_run_audit_rejects_verifier_disagreement(direct_vm,direct_deploy,
     direct_vm.check_pickling=True; direct_vm.warp("2026-01-01T00:00:00+00:00"); direct_vm.sender=direct_alice
     registry=direct_deploy(REGISTRY,Address(bytes(direct_alice))); module=__import__(type(registry).__module__,fromlist=["Clause","Source"]); recovery=Address(bytes(direct_bob)); clause=module.Clause(clause_id=1,text="availability",slash_bps=100,minimum_sources=1); sources=[module.Source(source_id=1,url="https://example.com/a"),module.Source(source_id=2,url="https://example.com/b")]
     cid=registry.create_covenant("service","description",recovery,100,10,10,[clause],sources); vault=Address(bytes.fromhex("11"*20)); registry.bind_canonical_vault(vault); direct_vm.sender=vault; registry.mark_funded(cid); direct_vm.sender=direct_alice; registry.activate(cid); direct_vm.mock_web("example\\.com",{"status":200,"body":"grounded"})
-    direct_vm.mock_llm("FROZEN CONTRACT",json.dumps([{"clause_id":1,"finding":"COMPLIED","severity":"NONE","evidence":[{"source_id":1,"excerpt":"grounded"}],"observed_event_timestamp":0,"reason":"ok"}]))
+    direct_vm.mock_llm("FROZEN CONTRACT RULES",json.dumps([{"clause_id":1,"finding":"COMPLIED","severity":"NONE","evidence":[{"source_id":1,"excerpt":"grounded"}],"observed_event_timestamp":0,"reason":"ok"}]))
     direct_vm.mock_llm("VERIFIER",json.dumps([{"clause_id":1,"finding":"BREACHED"}]))
     direct_vm.warp("2026-01-01T00:00:10+00:00")
     with pytest.raises(AssertionError): registry.run_audit(cid)

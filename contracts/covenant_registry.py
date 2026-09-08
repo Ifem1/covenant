@@ -1,6 +1,7 @@
 # v0.2.18
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
+import datetime
 import hashlib
 from dataclasses import dataclass
 
@@ -74,6 +75,7 @@ class CovenantRegistry(gl.Contract):
     canonical_vault: Address
     admin: Address
     def __init__(self, admin: Address): self.admin=admin
+    def _now_timestamp(self) -> u64: return u64(int(datetime.datetime.now(datetime.timezone.utc).timestamp()))
     @gl.public.view
     def get_covenant(self,covenant_id: u256) -> Covenant: return self.covenants[covenant_id]
     @gl.public.view
@@ -84,7 +86,7 @@ class CovenantRegistry(gl.Contract):
     def get_latest_audit(self,covenant_id: u256) -> Audit: return self.audits[self.covenants[covenant_id].latest_audit_id]
     @gl.public.view
     def is_audit_due(self,covenant_id: u256) -> bool:
-        c=self.covenants[covenant_id]; now=gl.get_block_timestamp(); return c.status in ['ACTIVE','GOOD_STANDING','UNDER_REVIEW','BREACHED'] and c.current_interval_start<c.expiry_timestamp and now>=c.next_audit
+        c=self.covenants[covenant_id]; now=self._now_timestamp(); return c.status in ['ACTIVE','GOOD_STANDING','UNDER_REVIEW','BREACHED'] and c.current_interval_start<c.expiry_timestamp and now>=c.next_audit
     @gl.public.write
     def create_covenant(self,service: str,description: str,recovery: Address,minimum_bond: u256,interval: u64,term: u64,clauses: DynArray[Clause],sources: DynArray[Source]) -> u256:
         assert len(clauses)>0 and len(clauses)<=12 and len(sources)>=2 and len(sources)<=5 and interval>0 and term>=interval and minimum_bond>0 and recovery!=Address('0x0000000000000000000000000000000000000000') and recovery!=gl.message.sender_address
@@ -115,10 +117,10 @@ class CovenantRegistry(gl.Contract):
     def mark_audit_settled(self,audit_id: str):
         a=self.audits[audit_id]; assert self.canonical_vault==gl.message.sender_address; assert a.outcome=='BREACH' and not a.settled; c=self.covenants[a.covenant_id]; assert c.unsettled_breach_count>0; a.settled=True; c.unsettled_breach_count-=1
     @gl.public.write
-    def activate(self,covenant_id: u256): c=self.covenants[covenant_id]; assert c.operator==gl.message.sender_address and c.status=='FUNDED'; now=gl.get_block_timestamp(); c.activation_timestamp=now; c.expiry_timestamp=now+c.term; c.current_interval_start=now; c.next_audit=min(now+c.interval,c.expiry_timestamp); c.status='ACTIVE'
+    def activate(self,covenant_id: u256): c=self.covenants[covenant_id]; assert c.operator==gl.message.sender_address and c.status=='FUNDED'; now=self._now_timestamp(); c.activation_timestamp=now; c.expiry_timestamp=now+c.term; c.current_interval_start=now; c.next_audit=min(now+c.interval,c.expiry_timestamp); c.status='ACTIVE'
     @gl.public.write
     def refresh_expiry(self,covenant_id: u256) -> bool:
-        c=self.covenants[covenant_id]; assert c.status!='CLOSED'; now=gl.get_block_timestamp()
+        c=self.covenants[covenant_id]; assert c.status!='CLOSED'; now=self._now_timestamp()
         if c.status not in ['ACTIVE','GOOD_STANDING','UNDER_REVIEW','BREACHED','EXPIRED']: return False
         if c.status!='EXPIRED' and now>=c.expiry_timestamp and c.current_interval_start>=c.expiry_timestamp and c.unsettled_breach_count==0: c.status='EXPIRED'
         return c.status=='EXPIRED'
@@ -136,6 +138,8 @@ class CovenantRegistry(gl.Contract):
         elif c.unsettled_breach_count==0: c.status='EXPIRED'
     def _make_audit_id(self,covenant_id: u256,start: u64,end: u64,nonce: u64) -> str:
         return hashlib.sha256((str(covenant_id)+':'+str(start)+':'+str(end)+':'+str(nonce)).encode()).hexdigest()
+    def _allocate_audit_id(self,covenant_id: u256,start: u64,end: u64) -> str:
+        c=self.covenants[covenant_id]; audit_id=self._make_audit_id(covenant_id,start,end,c.audit_nonce); c.audit_nonce+=1; return audit_id
     @gl.public.write
     def run_audit(self,covenant_id: u256):
         c=self.covenants[covenant_id]; assert self.is_audit_due(covenant_id); snapshot=gl.storage.copy_to_memory(c); start=snapshot.current_interval_start; end=min(start+snapshot.interval,snapshot.expiry_timestamp); clauses=gl.storage.copy_to_memory(snapshot.clauses); sources=gl.storage.copy_to_memory(snapshot.sources)
@@ -178,8 +182,7 @@ class CovenantRegistry(gl.Contract):
         for frozen in clauses: assert frozen.clause_id in seen
         if outcome!='BREACH': outcome='INCONCLUSIVE' if has_inconclusive else ('UNAVAILABLE' if has_unavailable else 'CLEAN')
         assert slash<=snapshot.remaining_slash_bps
-        audit_id=self._make_audit_id(covenant_id,start,end,snapshot.audit_nonce)
-        c.audit_nonce=snapshot.audit_nonce+1
+        audit_id=self._allocate_audit_id(covenant_id,start,end)
         self.audits[audit_id]=Audit(covenant_id,start,end,outcome,findings,slash,snapshot.definition_hash,False)
         c=self.covenants[covenant_id]
         c.latest_audit_id=audit_id; c.latest_audit_end=end

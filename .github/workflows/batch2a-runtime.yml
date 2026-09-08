@@ -1,6 +1,9 @@
 name: Batch 2A GenLayer runtime
 
 on:
+  push:
+    branches:
+      - codex/contract-foundation-hardening
   workflow_dispatch:
     inputs:
       ref:
@@ -15,7 +18,7 @@ jobs:
       - name: Checkout exact hardening ref
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Setup Node

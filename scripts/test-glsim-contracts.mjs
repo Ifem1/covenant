@@ -13,8 +13,8 @@ const other = createAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefa
 
 async function finalized(hash) {
   const receipt = await client.waitForTransactionReceipt({hash, interval: 100, retries: 100});
-  const execution = receipt.txExecutionResultName ?? receipt.executionResult ?? receipt.result;
-  assert(!['ERROR', 'FAILED', 'REJECTED', '0'].includes(String(execution).toUpperCase()), `GenLayer execution failed: ${JSON.stringify(receipt)}`);
+  const execution = String(receipt.txExecutionResultName ?? receipt.executionResult ?? '').toUpperCase();
+  assert(['SUCCESS', 'SUCCESSFUL', 'SUCCEEDED'].includes(execution), `GenLayer execution was not successful: ${JSON.stringify(receipt)}`);
   return receipt;
 }
 async function write(address, functionName, args = [], signer = client) {

@@ -16,7 +16,7 @@ class CovenantVault(gl.Contract):
     registry: Address
     bonds: TreeMap[u256,u256]
     settled: TreeMap[str,bool]
-    def __init__(self,registry): self.registry=registry; self.bonds=TreeMap(); self.settled=TreeMap()
+    def __init__(self, registry: Address): self.registry = registry
     @gl.public.view
     def get_bond(self,covenant_id: u256) -> u256: return self.bonds.get(covenant_id,u256(0))
     @gl.public.write.payable

@@ -33,7 +33,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install GenLayer runtime tooling
-        run: python -m pip install --upgrade pip 'genlayer-test[sim]'
+        run: python -m pip install --upgrade pip 'genlayer-test[sim]' genvm-lint
 
       - name: Install npm dependencies
         run: npm ci

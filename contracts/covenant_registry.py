@@ -160,7 +160,7 @@ class CovenantRegistry(gl.Contract):
                 if a.get('finding') in ['COMPLIED','BREACHED'] and (not a.get('evidence_source_ids') or not a.get('excerpt')): return False
             return True
         raw=gl.vm.run_nondet_unsafe(observe,validate); assert isinstance(raw,list) and len(raw)==len(clauses)
-        findings=DynArray[Finding](); seen=DynArray[u32](); outcome='CLEAN'; slash=u32(0); has_unavailable=False; has_inconclusive=False
+        findings=[]; seen=[]; outcome='CLEAN'; slash=u32(0); has_unavailable=False; has_inconclusive=False
         for item in raw:
             assert isinstance(item,dict)
             clause_id=item.get('clause_id'); finding=item.get('finding'); severity=item.get('severity'); ids=item.get('evidence_source_ids'); excerpt=item.get('excerpt'); event_date=item.get('observed_event_date'); reason=item.get('reason'); coverage=item.get('coverage')
@@ -172,7 +172,7 @@ class CovenantRegistry(gl.Contract):
             assert clause is not None
             for source_id in ids:
                 assert any(source.source_id==source_id for source in sources)
-            unique_ids=DynArray[u32]()
+            unique_ids=[]
             for source_id in ids: assert source_id not in unique_ids; unique_ids.append(u32(source_id))
             assert finding not in ['COMPLIED','BREACHED'] or (len(unique_ids)>=clause.minimum_sources and len(excerpt)>0 and coverage>0)
             findings.append(Finding(u32(clause_id),finding,severity,ids,excerpt,event_date,reason,u32(coverage)))

@@ -46,10 +46,16 @@ jobs:
       - name: GenVM Vault schema
         run: genvm-lint schema contracts/covenant_vault.py
       - name: Direct Mode probe suite
-        run: |
-          gltest tests/test_direct_validator.py --contracts-dir contracts --leader-only
-          gltest tests/test_direct_registry.py --contracts-dir contracts --leader-only
-          gltest tests/test_direct_vault.py --contracts-dir contracts --leader-only
+        run: gltest tests/test_direct_validator.py --contracts-dir contracts --leader-only
+      - name: Direct Mode Registry suite
+        if: always()
+        run: gltest tests/test_direct_registry.py --contracts-dir contracts --leader-only
+      - name: Direct Mode Vault suite
+        if: always()
+        run: gltest tests/test_direct_vault.py --contracts-dir contracts --leader-only
+      - name: Deterministic regression suite
+        if: always()
+        run: pytest -q tests/test_direct_regressions.py
 
   glsim-contract-runtime:
     runs-on: ubuntu-latest

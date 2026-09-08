@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 
 ROOT = Path(__file__).parents[1]
 REGISTRY = str(ROOT / "contracts" / "covenant_registry.py")
@@ -28,11 +29,12 @@ def test_binding_authorization_and_storage_roundtrip(direct_vm, direct_deploy, d
     vault = typed_address(REGISTRY, bytes.fromhex("11" * 20))
     registry.bind_canonical_vault(vault)
     assert registry.get_canonical_vault() == vault
-    with direct_vm.expect_revert(): registry.bind_canonical_vault(vault)
+    with pytest.raises(AssertionError): registry.bind_canonical_vault(vault)
     direct_vm.sender = direct_bob
     other = typed_address(REGISTRY, bytes.fromhex("22" * 20))
     fresh = deploy(direct_vm, direct_deploy, direct_alice)
-    with direct_vm.expect_revert(): fresh.bind_canonical_vault(other)
+    direct_vm.sender = direct_bob
+    with pytest.raises(AssertionError): fresh.bind_canonical_vault(other)
     direct_vm.sender = direct_alice
     args, clauses, sources = definition(direct_alice, direct_bob)
     cid = registry.create_covenant(*args)
@@ -55,7 +57,9 @@ def test_creation_rejections_and_callback_auth(direct_vm, direct_deploy, direct_
         args[:2] + [recovery, 100, 10, 20, clauses, [sources[0], {"source_id": 2, "url": "http://example.com/b"}]],
         args[:2] + [recovery, 100, 10, 20, [clauses[0], clauses[0]], sources],
     ]
-    for bad in cases:
-        with direct_vm.expect_revert(): registry.create_covenant(*bad)
+    labels = ["zero-bond", "self-recovery", "duplicate-url", "non-https", "duplicate-clause-id"]
+    for label, bad in zip(labels, cases):
+        with pytest.raises(AssertionError, match=""):
+            registry.create_covenant(*bad)
     cid = registry.create_covenant(*args)
-    with direct_vm.expect_revert(): registry.mark_funded(cid)
+    with pytest.raises(AssertionError): registry.mark_funded(cid)
